@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin [{{ env.name }}] — VPN GlobalProtect</title>
+    <meta name="description" content="Panel de administración de usuarios para VPN GlobalProtect">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <div>
+                    <h1>Panel de Administración <span
+                            style="--banner-color: {{ env.banner_color }}; color: var(--banner-color)">[{{ env.name
+                            }}]</span></h1>
+                    <p class="subtitle">Gestión de Usuarios · VPN GlobalProtect</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="btn btn-outline">
+                    <span class="btn-icon">🏠</span> Inicio
+                </a>
+                <div class="user-badge">
+                    <span class="user-badge-role role-{{ user.role }}">{{ user.role | upper }}</span>
+                    <span class="user-badge-name">{{ user.display_name or user.username }}</span>
+                </div>
+                <a href="/logout" class="btn btn-outline btn-sm">
+                    <span class="btn-icon">🚪</span> Salir
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══ MAIN ═══ -->
+    <main class="container">
+
+        <!-- Action bar -->
+        <div class="admin-actions">
+            <h2 class="section-title">👥 Usuarios Registrados</h2>
+            {% if user.role == "super_admin" and env.name == "QA" %}
+            <button class="btn btn-outline" id="btnMigrate" onclick="migrateToPrd()"
+                title="Migrar configuración de QA a PRD">
+                <span class="btn-icon">📦</span> Migrar a PRD
+            </button>
+            {% endif %}
+            <button class="btn btn-primary" id="btnNewUser" onclick="showCreateModal()">
+                <span class="btn-icon">➕</span> Nuevo Usuario
+            </button>
+        </div>
+
+        <!-- Users table -->
+        <div class="card">
+            <div class="table-wrapper">
+                <table class="admin-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuario</th>
+                            <th>Nombre</th>
+                            <th>Email</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th>Creado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersBody">
+                        <tr>
+                            <td colspan="8" class="table-loading">Cargando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Error / Success messages -->
+        <div id="adminMsg" class="admin-msg hidden"></div>
+
+    </main>
+
+    <!-- ═══ MODAL: Crear/Editar Usuario ═══ -->
+    <div class="modal-overlay hidden" id="userModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Nuevo Usuario</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="userForm" onsubmit="handleSubmitUser(event)">
+                <input type="hidden" id="editUserId" value="">
+                <div class="form-group">
+                    <label for="modalUsername">Username</label>
+                    <input type="text" id="modalUsername" placeholder="nombre.apellido" required>
+                </div>
+                <div class="form-group">
+                    <label for="modalDisplayName">Nombre completo</label>
+                    <input type="text" id="modalDisplayName" placeholder="Juan Pérez">
+                </div>
+                <div class="form-group">
+                    <label for="modalEmail">Email</label>
+                    <input type="email" id="modalEmail" placeholder="usuario@ejemplo.com">
+                </div>
+                <div class="form-group">
+                    <label for="modalRole">Rol</label>
+                    <select id="modalRole" required>
+                        <option value="user">Usuario Full</option>
+                        <option value="admin">Admin</option>
+                        <option value="guest">Guest</option>
+                    </select>
+                </div>
+                <div class="form-group" id="passwordGroup">
+                    <label for="modalPassword" id="passwordLabel">Contraseña</label>
+                    <input type="password" id="modalPassword" placeholder="Mínimo 4 caracteres">
+                </div>
+                <div class="form-group" id="forceChangePwGroup" style="display: none;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="modalForceChangePw">
+                        Forzar cambio de contraseña al próximo inicio
+                    </label>
+                </div>
+                <div id="modalError" class="login-error hidden"></div>
+                <button type="submit" class="btn btn-primary btn-large" id="modalSubmitBtn">
+                    <span class="btn-icon">💾</span> <span id="modalSubmitText">Crear Usuario</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>VPN GlobalProtect Automation · Panel de Administración · v1.0</p>
+    </footer>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════════
+        // ADMIN PANEL JS
+        // ═══════════════════════════════════════════════════════════════
+
+        let users = [];
+
+        async function loadUsers() {
+            try {
+                const resp = await fetch('/api/admin/users');
+                if (resp.status === 401) { window.location.href = '/login'; return; }
+                users = await resp.json();
+                renderUsers();
+            } catch (err) {
+                showMsg('Error cargando usuarios: ' + err.message, 'error');
+            }
+        }
+
+        function renderUsers() {
+            const tbody = document.getElementById('usersBody');
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No hay usuarios.</td></tr>';
+                return;
+            }
+
+            const roleNames = {
+                'super_admin': 'SUPER ADMIN',
+                'admin': 'ADMIN',
+                'user': 'USUARIO FULL',
+                'guest': 'INVITADO'
+            };
+
+            tbody.innerHTML = users.map(u => `
+            <tr class="${u.active ? '' : 'row-inactive'}">
+                <td class="mono">${u.id}</td>
+                <td class="mono">${u.username}</td>
+                <td>${u.display_name || '—'}</td>
+                <td class="text-muted mono">${u.email || '—'}</td>
+                <td><span class="role-badge role-${u.role}">${roleNames[u.role] || u.role.toUpperCase()}</span></td>
+                <td><span class="status-badge status-${u.active ? 'active' : 'inactive'}">${u.active ? 'Activo' : 'Inactivo'}</span></td>
+                <td class="text-muted">${u.created_at || '—'}</td>
+                <td class="actions-cell">
+                    <button class="btn btn-sm btn-outline" onclick="editUser(${u.id})" title="Editar">✏️</button>
+                    ${u.active
+                    ? `<button class="btn btn-sm btn-danger-outline" onclick="toggleUser(${u.id}, false)" title="Desactivar">🚫</button>`
+                    : `<button class="btn btn-sm btn-success-outline" onclick="toggleUser(${u.id}, true)" title="Activar">✅</button>`
+                }
+                </td>
+            </tr>
+        `).join('');
+        }
+
+        function showCreateModal() {
+            document.getElementById('modalTitle').textContent = 'Nuevo Usuario';
+            document.getElementById('modalSubmitText').textContent = 'Crear Usuario';
+            document.getElementById('editUserId').value = '';
+            document.getElementById('modalUsername').value = '';
+            document.getElementById('modalUsername').disabled = false;
+            document.getElementById('modalDisplayName').value = '';
+            document.getElementById('modalEmail').value = '';
+            document.getElementById('modalRole').value = 'user';
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalPassword').required = true;
+            document.getElementById('passwordLabel').textContent = 'Contraseña';
+            document.getElementById('forceChangePwGroup').style.display = 'none';
+            document.getElementById('modalError').classList.add('hidden');
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function editUser(id) {
+            const u = users.find(x => x.id === id);
+            if (!u) return;
+            document.getElementById('modalTitle').textContent = 'Editar Usuario';
+            document.getElementById('modalSubmitText').textContent = 'Guardar Cambios';
+            document.getElementById('editUserId').value = id;
+            document.getElementById('modalUsername').value = u.username;
+            document.getElementById('modalUsername').disabled = true;
+            document.getElementById('modalDisplayName').value = u.display_name || '';
+            document.getElementById('modalEmail').value = u.email || '';
+            document.getElementById('modalRole').value = u.role;
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalPassword').required = false;
+            document.getElementById('passwordLabel').textContent = 'Nueva Contraseña (dejar vacío para no cambiar)';
+            document.getElementById('forceChangePwGroup').style.display = 'block';
+            document.getElementById('modalForceChangePw').checked = false;
+            document.getElementById('modalError').classList.add('hidden');
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('userModal').classList.add('hidden');
+        }
+
+        async function handleSubmitUser(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editUserId').value;
+            const data = {
+                username: document.getElementById('modalUsername').value.trim(),
+                display_name: document.getElementById('modalDisplayName').value.trim(),
+                email: document.getElementById('modalEmail').value.trim(),
+                role: document.getElementById('modalRole').value,
+                password: document.getElementById('modalPassword').value,
+            };
+
+            if (editId) {
+                data.force_change_pw = document.getElementById('modalForceChangePw').checked;
+            }
+
+            const errorEl = document.getElementById('modalError');
+
+            try {
+                let resp;
+                if (editId) {
+                    resp = await fetch(`/api/admin/users/${editId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
+                    });
+                } else {
+                    if (!data.password || data.password.length < 4) {
+                        errorEl.textContent = '❌ Contraseña mínimo 4 caracteres.';
+                        errorEl.classList.remove('hidden');
+                        return;
+                    }
+                    resp = await fetch('/api/admin/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
+                    });
+                }
+
+                const result = await resp.json();
+                if (result.error) {
+                    errorEl.textContent = '❌ ' + result.error;
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+
+                closeModal();
+                showMsg(result.message, 'success');
+                loadUsers();
+            } catch (err) {
+                errorEl.textContent = '❌ Error: ' + err.message;
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        async function toggleUser(id, activate) {
+            const action = activate ? 'activar' : 'desactivar';
+            if (!confirm(`¿${activate ? 'Activar' : 'Desactivar'} este usuario?`)) return;
+
+            try {
+                const resp = await fetch(`/api/admin/users/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active: activate }),
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    showMsg(result.error, 'error');
+                    return;
+                }
+                showMsg(`Usuario ${activate ? 'activado' : 'desactivado'}.`, 'success');
+                loadUsers();
+            } catch (err) {
+                showMsg('Error: ' + err.message, 'error');
+            }
+        }
+
+        function showMsg(text, type) {
+            const el = document.getElementById('adminMsg');
+            el.textContent = (type === 'error' ? '❌ ' : '✅ ') + text;
+            el.className = `admin-msg admin-msg-${type}`;
+            setTimeout(() => { el.classList.add('hidden'); }, 4000);
+        }
+
+        // Click outside modal to close
+        document.getElementById('userModal').addEventListener('click', (e) => {
+            if (e.target.id === 'userModal') closeModal();
+        });
+
+        // ESC to close modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        async function migrateToPrd() {
+            const riskChecklist =
+                "⚠️ PROTOCOLO DE CHANGE ENABLEMENT (ITIL 4):\n\n" +
+                "1. SERVICE TRANSITION: Sincronización de activos de configuración (CIs) de QA a PRD.\n" +
+                "2. CHANGE ASSESSMENT: Generación de BACKUP automático previo al despliegue.\n" +
+                "3. VALIDATION & TESTING: Garantía de que PRD refleje fielmente el estado validado en QA.\n\n" +
+                "¿Confirmas el despliegue formal de cambios a Producción?";
+
+            if (!confirm(riskChecklist)) {
+                return;
+            }
+
+            const btn = document.getElementById('btnMigrate');
+            const originalHtml = btn.innerHTML;
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '📦 Migrando...';
+
+                const response = await fetch('/api/admin/migrate-to-prd', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': "{{ csrf_token() }}" }
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    showMsg(data.message, 'success');
+                } else {
+                    showMsg(data.error || 'Error en la migración', 'error');
+                }
+            } catch (err) {
+                showMsg('Error de red al migrar', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        // ── Init ──
+        loadUsers();
+    </script>
+</body>
+
+</html>

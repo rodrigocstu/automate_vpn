@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPN GlobalProtect [{{env.name}}] — Automatización</title>
+    <meta name="description"
+        content="Herramienta de automatización para cuentas VPN SSL GlobalProtect (INT/EXT) con generación de CLI PAN-OS">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=1.4">
+</head>
+
+<body>
+    <!-- Env + Role data for JS -->
+    <script>
+        window.USER_ROLE = "{{user.role}}";
+        window.USER_NAME = "{{user.display_name or user.username}}";
+        window.APP_ENV = "{{env.name}}";
+    </script>
+
+    <!-- Dynamic accent color per env -->
+    <style>
+        :root {
+            --accent: {
+                    {
+                    env.accent
+                }
+            }
+
+            ;
+
+            --accent-hover: {
+                    {
+                    env.accent_hover
+                }
+            }
+
+            ;
+
+            --accent-glow: {
+                    {
+                    env.accent_glow
+                }
+            }
+
+            ;
+
+            --grad-from: {
+                    {
+                    env.gradient_from
+                }
+            }
+
+            ;
+
+            --grad-to: {
+                    {
+                    env.gradient_to
+                }
+            }
+
+            ;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--grad-from), var(--grad-to));
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--accent-hover), var(--grad-to));
+        }
+
+        .sudo-tag {
+            background: linear-gradient(135deg, #f57917 0%, #d9480f 100%);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 800;
+            font-size: 0.7rem;
+            box-shadow: 0 0 10px rgba(245, 121, 23, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+
+    <!-- ═══ ENV BANNER ═══ -->
+    <div class="env-banner"
+        style="--banner-bg: {{env.banner_bg}}; --banner-border: {{env.banner_border}}; --banner-color: {{env.banner_color}}; background: var(--banner-bg); border-bottom: 2px solid var(--banner-border); color: var(--banner-color);">
+        {{env.emoji}} <strong>{{env.label}}</strong>
+        {% if env.name == 'QA' %}
+        — VPN GLOBAL PROTECT
+        {% else %}
+        — Entorno de producción — Sin commit automático
+        {% endif %}
+    </div>
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <div>
+                    <h1>VPN GlobalProtect <span class="env-tag"
+                            style="--banner-color: {{env.banner_color}}; color: var(--banner-color)">[{{env.name}}]</span>
+                    </h1>
+                    <p class="subtitle">Automatización de Cuentas SSL · PAN-OS CLI</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                {% if user.role == 'super_admin' and env.name == 'QA' %}
+                <button class="btn btn-outline" id="btnMigrateDashboard" onclick="migrateToPrdFromDashboard()"
+                    title="Migrar configuración de QA a PRD">
+                    <span class="btn-icon">📦</span> Migrar a PRD
+                </button>
+                {% endif %}
+                {% if user.role in ('admin', 'super_admin') %}
+                <a href="/admin" class="btn btn-outline" title="Panel de Administración">
+                    <span class="btn-icon">⚙️</span> Admin
+                </a>
+                {% endif %}
+                <div class="user-badge">
+                    <span class="user-badge-role role-{{user.role}}">
+                        {% if user.role == 'super_admin' %}<span class="sudo-tag" title="SUDO ACCESS">⚡ SUPER
+                            ADMIN</span>
+                        {% elif user.role == 'admin' %}ADMIN
+                        {% elif user.role == 'user' %}USUARIO FULL
+                        {% elif user.role == 'guest' %}INVITADO
+                        {% else %}{{user.role | upper}}{% endif %}
+                    </span>
+                    <span class="user-badge-name">{{user.display_name or user.username}}</span>
+                    {% if user.role == 'super_admin' %}
+                    <button class="btn btn-outline btn-sm" onclick="showBatchHistoryModal()"
+                        title="Historial de Lotes CMDB"
+                        style="margin-left: 0.5rem; padding: 2px 6px; border-radius: 4px; border-color: rgba(var(--accent-rgb), 0.3);">
+                        🕒
+                    </button>
+                    {% endif %}
+                </div>
+                <a href="/change-password" class="btn btn-outline btn-sm" title="Cambiar contraseña">🔑</a>
+                <a href="/logout" class="btn btn-outline btn-sm" title="Cerrar sesión">
+                    <span class="btn-icon">🚪</span> Salir
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ═══ MAIN ═══ -->
+    <main class="container">
+
+        {% if user.role == 'guest' %}
+        <div class="guest-banner">
+            <span>👁️</span> Modo Invitado — Solo acceso al módulo <strong>Parámetros</strong>
+        </div>
+        {% endif %}
+
+        <!-- TABS -->
+        <div class="tabs">
+            <button class="tab active" data-tab="params">
+                <span class="tab-icon">⚙️</span> Automatizar VPN
+            </button>
+            {% if user.role == 'super_admin' %}
+            <button class="tab" data-tab="cmdb"
+                style="background: rgba(245, 121, 23, 0.1); border: 1px solid var(--accent);">
+                <span class="tab-icon">📁</span> CMDB
+            </button>
+            <button class="tab" data-tab="excel">
+                <span class="tab-icon">📊</span> Excel
+            </button>
+            <button class="tab" data-tab="ansible">
+                <span class="tab-icon">🛠️</span> Ansible
+            </button>
+            <button class="tab" data-tab="s2s">
+                <span class="tab-icon">🔗</span> VPN S2S
+            </button>
+            {% endif %}
+            {% if user.role != 'guest' %}
+            <button class="tab" data-tab="ticket">
+                <span class="tab-icon">📋</span> Ordenar Info VPN CLI
+            </button>
+            {% else %}
+            <button class="tab tab-disabled" disabled title="No disponible para perfil Invitado">
+                <span class="tab-icon">📋</span> Ordenar Info VPN CLI 🔒
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- ═══ TAB: PARÁMETROS ═══ -->
+        <div class="tab-content active" id="tab-params">
+            <form id="formParams" class="form-grid">
+
+                <!-- Datos principales -->
+                <div class="card">
+                    <h2 class="card-title">📝 Datos de la Solicitud</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="ritm">RITM <span class="required">*</span></label>
+                            <input type="text" id="ritm" placeholder="RITM00001359407" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="tipo">Tipo VPN <span class="required">*</span></label>
+                            <select id="tipo" required>
+                                <option value="">Seleccionar…</option>
+                                <option value="INT">INT (Interna)</option>
+                                <option value="EXT">EXT (Externa)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="minsal">Código MINSAL <span class="required">*</span></label>
+                            <input type="text" id="minsal" placeholder="0806819-100" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="rut">RUT Usuario <span class="required">*</span></label>
+                            <input type="text" id="rut" placeholder="12994496-k" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vencimiento">Fecha Vencimiento <span class="required">*</span></label>
+                            <input type="date" id="vencimiento" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="obs">Observación</label>
+                            <input type="text" id="obs" placeholder="Opcional">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Datos EXT -->
+                <div class="card" id="extFields" style="display:none;">
+                    <h2 class="card-title">🌐 Datos EXT (Externa)</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="ips">IPs Destino</label>
+                            <textarea id="ips" placeholder="10.8.110.211, 10.8.110.212..." rows="3"></textarea>
+                            <span class="hint">Puedes pegar texto desordenado; el sistema extraerá y ordenará las IPs
+                                automáticamente.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="puertos">Puertos</label>
+                            <textarea id="puertos" placeholder="3389/TCP, 443/TCP..." rows="3"></textarea>
+                            <span class="hint">Admite 3389/TCP, 443, etc. Se auto-limpiarán y ordenarán.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuración avanzada -->
+                <details class="card advanced-config">
+                    <summary class="card-title">🔧 Configuración Avanzada (Defaults)</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="vsys">vsys</label>
+                            <input type="text" id="vsys" value="vsys1">
+                        </div>
+                        <div class="form-group">
+                            <label for="zona_origen">Zona Origen</label>
+                            <input type="text" id="zona_origen" value="GP_VPN">
+                        </div>
+                        <div class="form-group">
+                            <label for="zona_destino">Zona Destino</label>
+                            <input type="text" id="zona_destino" value="inside_VPN">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="grupo_int">Grupo INT</label>
+                            <input type="text" id="grupo_int" value="TIC_MINSAL_INT">
+                        </div>
+                        <div class="form-group">
+                            <label for="grupo_ext">Grupo EXT</label>
+                            <input type="text" id="grupo_ext" value="TIC_MINSAL_EXT">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="log_setting">Log Setting</label>
+                            <input type="text" id="log_setting" value="Threat Level">
+                        </div>
+                        <div class="form-group">
+                            <label for="profile_group">Profile Group</label>
+                            <input type="text" id="profile_group" value="GRP_VPN">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="crear_objetos" checked>
+                            Crear address/service objects si no existen
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="incluir_commit" {% if env.incluir_commit %}checked{% endif %}>
+                            Incluir commit al final
+                            {% if env.name == 'QA' %}<span class="hint">(activado por defecto en QA)</span>{% endif %}
+                        </label>
+                    </div>
+                </details>
+
+                {% if user.role != 'guest' %}
+                <button type="submit" class="btn btn-primary btn-large">
+                    <span class="btn-icon">🚀</span> Generar Credenciales + CLI
+                </button>
+                {% else %}
+                <div class="guest-action-blocked">
+                    🔒 Los invitados no pueden generar credenciales. Contacte a un administrador para obtener permisos.
+                </div>
+                {% endif %}
+            </form>
+        </div>
+
+        <!-- ═══ TAB: TICKET ═══ -->
+        {% if user.role != 'guest' %}
+        <div class="tab-content" id="tab-ticket">
+            <div class="card">
+                <h2 class="card-title">📋 Pegar Ticket Desordenado</h2>
+                <p class="card-desc">Pega el texto completo del requerimiento. El sistema detectará automáticamente
+                    RITM, MINSAL, RUT, tipo, IPs y puertos.</p>
+                <div class="form-group">
+                    <textarea id="ticketText" rows="10" placeholder="Ejemplo:
+Solicitud RITM00001359407 para VPN EXT.
+Código MINSAL: 0806819-100
+RUT: 12.994.496-K
+Vencimiento: 2027-02-19
+IPs: 10.8.110.211, 10.8.110.212
+Puertos: 3389/TCP, 443/TCP"></textarea>
+                </div>
+                <button type="button" class="btn btn-primary btn-large" id="btnParseTicket">
+                    <span class="btn-icon">🔍</span> Parsear y Generar
+                </button>
+            </div>
+        </div>
+
+        <!-- ═══ TAB: EXCEL ═══ -->
+        <div class="tab-content" id="tab-excel">
+            <div class="card">
+                <h2 class="card-title">📊 Subir archivo Excel</h2>
+                <p class="card-desc">Sube la plantilla con datos. La fila 3 es la primera fila de datos (fila 1 =
+                    headers, fila 2 = guía).</p>
+                <div class="form-row">
+                    <div class="form-group" style="flex:2">
+                        <label for="excelFile">Archivo Excel (.xlsx)</label>
+                        <div class="file-upload" id="fileUploadArea">
+                            <input type="file" id="excelFile" accept=".xlsx,.xlsm" hidden>
+                            <div class="file-upload-content">
+                                <span class="file-icon">📁</span>
+                                <span id="fileName">Arrastra o haz clic para seleccionar</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group" style="flex:0.5">
+                        <label for="excelRow">Fila</label>
+                        <input type="number" id="excelRow" value="3" min="3" max="102">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-large" id="btnProcessExcel">
+                    <span class="btn-icon">⚡</span> Procesar Fila
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ═══ TAB: VPN SITE-TO-SITE ═══ -->
+        {% if user.role == 'super_admin' %}
+        <div class="tab-content" id="tab-s2s">
+            <form id="formS2S" class="form-grid">
+
+                <!-- Datos principales -->
+                <div class="card">
+                    <h2 class="card-title">🔗 VPN IPsec Site-to-Site</h2>
+                    <p class="card-desc">Genera la configuración CLI completa para un túnel IPsec S2S en PAN-OS. Modo
+                        <strong>Proxy-ID (Policy-based)</strong> con IKEv2.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="s2s_ritm">RITM / ID <span class="required">*</span></label>
+                            <input type="text" id="s2s_ritm" placeholder="RITM0001234567" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="s2s_peer_ip">Peer IP Pública <span class="required">*</span></label>
+                            <input type="text" id="s2s_peer_ip" placeholder="186.67.71.23" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="s2s_local_subnet">Subred Local (CIDR) <span class="required">*</span></label>
+                            <input type="text" id="s2s_local_subnet" placeholder="10.0.0.0/8" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="s2s_remote_subnet">Subred Remota (CIDR) <span class="required">*</span></label>
+                            <input type="text" id="s2s_remote_subnet" placeholder="172.16.0.0/12" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="s2s_psk">PSK (Pre-Shared Key) <span class="required">*</span></label>
+                            <input type="password" id="s2s_psk" placeholder="••••••••••••••••" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="s2s_tunnel_id">Número de Túnel <span class="required">*</span></label>
+                            <input type="number" id="s2s_tunnel_id" placeholder="100" min="1" max="9999" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuración de Red -->
+                <div class="card">
+                    <h2 class="card-title">🛰️ Configuración de Red</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="s2s_local_wan_ip">IP WAN Local (Palo Alto) <span
+                                    style="color:var(--accent-color)">*</span></label>
+                            <input type="text" id="s2s_local_wan_ip" placeholder="Ej: 186.67.71.23" required>
+                            <span class="hint">IP pública de la interfaz WAN local — debe diferir del Peer IP.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="s2s_local_if">Interfaz WAN Local</label>
+                            <input type="text" id="s2s_local_if" value="ethernet1/1">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="s2s_vr">Virtual Router</label>
+                            <input type="text" id="s2s_vr" value="vr_vpn">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="s2s_local_zone">Zona Local</label>
+                                <input type="text" id="s2s_local_zone" value="Inside">
+                            </div>
+                            <div class="form-group">
+                                <label for="s2s_tunnel_zone">Sufijo Zona de Túnel</label>
+                                <input type="text" id="s2s_tunnel_zone" placeholder="SITE_PEER_X">
+                                <span class="hint">La zona final será <code>MINSAL_TO_</code> + este valor.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Avanzado -->
+                    <details class="card advanced-config" open>
+                        <summary class="card-title">🔒 Perfiles Crypto — PAN-OS 10.2.x</summary>
+
+                        <!-- IKE Phase 1 -->
+                        <p class="hint" style="margin-bottom:.5rem;font-weight:600;">📡 IKE Phase 1 (IKEv2)</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ike_enc">Cifrado IKE</label>
+                                <select id="ike_enc">
+                                    <option value="aes-256-cbc" selected>AES-256-CBC ⭐ Recomendado</option>
+                                    <option value="aes-128-cbc">AES-128-CBC</option>
+                                    <option value="aes-192-cbc">AES-192-CBC</option>
+                                    <option value="aes-256-gcm">AES-256-GCM (IKEv2)</option>
+                                    <option value="aes-128-gcm">AES-128-GCM (IKEv2)</option>
+                                    <option value="3des">3DES (Legacy)</option>
+                                    <option value="des">DES (No recomendado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ike_hash">Hash IKE</label>
+                                <select id="ike_hash">
+                                    <option value="sha256" selected>SHA-256 ⭐ Recomendado</option>
+                                    <option value="sha384">SHA-384</option>
+                                    <option value="sha512">SHA-512</option>
+                                    <option value="sha1">SHA-1 (Legacy)</option>
+                                    <option value="md5">MD5 (No recomendado)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ike_dh">Grupo DH (IKE)</label>
+                                <select id="ike_dh">
+                                    <option value="group14" selected>Group 14 — 2048-bit MODP ⭐</option>
+                                    <option value="group19">Group 19 — 256-bit ECP (NIST P-256)</option>
+                                    <option value="group20">Group 20 — 384-bit ECP (NIST P-384)</option>
+                                    <option value="group21">Group 21 — 521-bit ECP (NIST P-521)</option>
+                                    <option value="group5">Group 5 — 1536-bit MODP (Legacy)</option>
+                                    <option value="group2">Group 2 — 1024-bit MODP (No recomendado)</option>
+                                    <option value="group1">Group 1 — 768-bit MODP (No recomendado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ike_lifetime">Lifetime IKE (horas)</label>
+                                <input type="number" id="ike_lifetime" value="8" min="1" max="65535">
+                            </div>
+                        </div>
+
+                        <!-- IPsec Phase 2 -->
+                        <p class="hint" style="margin:1rem 0 .5rem;font-weight:600;">🔐 IPsec Phase 2 (ESP)</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ipsec_enc">Cifrado ESP</label>
+                                <select id="ipsec_enc">
+                                    <option value="aes-256-cbc" selected>AES-256-CBC ⭐ Recomendado</option>
+                                    <option value="aes-128-cbc">AES-128-CBC</option>
+                                    <option value="aes-192-cbc">AES-192-CBC</option>
+                                    <option value="aes-256-gcm">AES-256-GCM (AEAD)</option>
+                                    <option value="aes-128-gcm">AES-128-GCM (AEAD)</option>
+                                    <option value="3des">3DES (Legacy)</option>
+                                    <option value="des">DES (No recomendado)</option>
+                                    <option value="null">NULL (Sin cifrado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ipsec_auth">Auth ESP</label>
+                                <select id="ipsec_auth">
+                                    <option value="sha256" selected>SHA-256 ⭐ Recomendado</option>
+                                    <option value="sha384">SHA-384</option>
+                                    <option value="sha512">SHA-512</option>
+                                    <option value="sha1">SHA-1 (Legacy)</option>
+                                    <option value="md5">MD5 (No recomendado)</option>
+                                    <option value="none">Ninguna (solo con GCM)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ipsec_dh">PFS — Grupo DH (IPsec)</label>
+                                <select id="ipsec_dh">
+                                    <option value="group14" selected>Group 14 — 2048-bit MODP ⭐</option>
+                                    <option value="group19">Group 19 — 256-bit ECP (NIST P-256)</option>
+                                    <option value="group20">Group 20 — 384-bit ECP (NIST P-384)</option>
+                                    <option value="group21">Group 21 — 521-bit ECP (NIST P-521)</option>
+                                    <option value="group5">Group 5 — 1536-bit MODP (Legacy)</option>
+                                    <option value="group2">Group 2 — 1024-bit MODP (No recomendado)</option>
+                                    <option value="group1">Group 1 — 768-bit MODP (No recomendado)</option>
+                                    <option value="no-pfs">Sin PFS (no recomendado)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ipsec_lifetime">Lifetime IPsec (horas)</label>
+                                <input type="number" id="ipsec_lifetime" value="1" min="1" max="65535">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="s2s_create_policies" checked>
+                                Crear reglas de seguridad (Inbound/Outbound)
+                            </label>
+                        </div>
+
+                        <!-- App-ID Selector (PA-5250 Policy Standards) -->
+                        <div class="form-group" id="appid_section" style="margin-top:1rem;">
+                            <label>🔐 Aplicaciones permitidas (App-ID) <span style="color:var(--accent-color)">—
+                                    estándar PA-5250</span></label>
+                            <span class="hint">Busca y agrega App-IDs. Dejar vacío = <code>application any</code> (no
+                                recomendado).</span>
+                            <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+                                <input type="text" id="appid_search"
+                                    placeholder="Buscar App-ID (ej: ssh, rdp, dns, mssql...)" style="flex:1">
+                                <button type="button" id="btnAppIdSearch" class="btn btn-secondary"
+                                    style="white-space:nowrap">🔍 Buscar</button>
+                            </div>
+                            <!-- Search results -->
+                            <div id="appid_results"
+                                style="display:none;background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;margin-top:0.4rem;max-height:180px;overflow-y:auto;padding:0.4rem;">
+                            </div>
+                            <!-- Selected apps -->
+                            <div id="appid_selected"
+                                style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;min-height:36px;background:var(--bg-input);border-radius:8px;padding:0.4rem;">
+                            </div>
+                            <input type="hidden" id="s2s_applications" value="">
+                            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                                <button type="button" class="btn btn-secondary" onclick="s2sAddPreset('networking')"
+                                    style="font-size:0.78rem;">+ Networking (SSH/DNS/SNMP)</button>
+                                <button type="button" class="btn btn-secondary" onclick="s2sAddPreset('database')"
+                                    style="font-size:0.78rem;">+ Bases de Datos</button>
+                                <button type="button" class="btn btn-secondary" onclick="s2sAddPreset('healthcare')"
+                                    style="font-size:0.78rem;">+ Healthcare (HL7/DICOM)</button>
+                                <button type="button" class="btn btn-secondary" onclick="s2sAddPreset('management')"
+                                    style="font-size:0.78rem;">+ Monitoreo (SNMP/Syslog)</button>
+                                <button type="button" class="btn btn-danger" onclick="s2sClearApps()"
+                                    style="font-size:0.78rem;">✕ Limpiar</button>
+                            </div>
+                        </div>
+                    </details>
+
+                    <button type="button" id="btnGenerateS2S" class="btn btn-primary btn-large">
+                        <span class="btn-icon">⚡</span> Generar Configuración IPsec S2S
+                    </button>
+                </div> <!-- Ends card from 407 -->
+            </form>
+
+            <!-- Resultado S2S -->
+            <div id="s2s_result" class="hidden" style="margin-top:1.5rem;">
+                <div class="card result-card">
+                    <div class="card-header-row">
+                        <h2 class="card-title">💻 Comandos CLI PAN-OS (S2S)</h2>
+                        <button class="btn btn-copy" id="btnCopyS2S" title="Copiar al portapapeles">
+                            <span id="copyS2SIcon">📋</span> <span id="copyS2SText">Copiar</span>
+                        </button>
+                    </div>
+                    <pre class="cli-output" id="s2sCliOutput"></pre>
+                    <p class="cli-note">⚠️ Revisa el Proxy-ID y la PSK antes de aplicar. No incluye <code>commit</code>.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ═══ TAB: ANSIBLE ═══ -->
+        {% if user.role == 'super_admin' %}
+        <div class="tab-content" id="tab-ansible" style="min-height: 400px; opacity: 1 !important;">
+            <div class="card">
+                <h2 class="card-title">🤖 Automatización con Ansible (Standard View)</h2>
+                <p class="card-desc">Completa los campos para generar un Playbook de Ansible PAN-OS. Esta vista
+                    simplificada garantiza compatibilidad total.</p>
+
+                <form id="formAnsibleStandard" class="form-grid">
+                    <!-- Sección 1: Acceso -->
+                    <div class="card" style="background: rgba(255,255,255,0.02);">
+                        <h3 style="margin-bottom:1rem; font-size:0.9rem; color:var(--accent);">Step 1 & 2: Acceso y
+                            Networking</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ansible_firewall_ip">Firewall IP</label>
+                                <input type="text" id="ansible_firewall_ip" placeholder="10.1.1.1">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_username">Usuario</label>
+                                <input type="text" id="ansible_username" placeholder="admin">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_password">Password</label>
+                                <input type="password" id="ansible_password" placeholder="••••••••">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ansible_if_name">Interfaz</label>
+                                <input type="text" id="ansible_if_name" value="ethernet1/1">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_if_zone">Zona</label>
+                                <input type="text" id="ansible_if_zone" value="untrusted">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sección 2: NAT y Políticas -->
+                    <div class="card" style="background: rgba(255,255,255,0.02);">
+                        <h3 style="margin-bottom:1rem; font-size:0.9rem; color:var(--accent);">Step 4 & 5: NAT y
+                            Políticas</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ansible_nat_name">Nombre NAT</label>
+                                <input type="text" id="ansible_nat_name" value="VIP_NAT_REALTIME">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_nat_type">Tipo NAT</label>
+                                <select id="ansible_nat_type">
+                                    <option value="source">Source NAT</option>
+                                    <option value="destination">Destination NAT</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ansible_src_zone">Zona Origen</label>
+                                <input type="text" id="ansible_src_zone" value="inside">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_dest_zone">Zona Destino</label>
+                                <input type="text" id="ansible_dest_zone" value="untrusted">
+                            </div>
+                            <div class="form-group">
+                                <label for="ansible_tags">Tags</label>
+                                <input type="text" id="ansible_tags" placeholder="Ansible-VIP">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sección 3: Sistema -->
+                    <div class="card" style="background: rgba(255,255,255,0.02);">
+                        <h3 style="margin-bottom:1rem; font-size:0.9rem; color:var(--accent);">Step 6: Sistema</h3>
+                        <div class="form-row">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ansible_create_checkpoint" checked> Crear Checkpoint
+                                (Snapshot)
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ansible_auto_commit"> Auto-Commit tras Despliegue
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="button" id="btnAnsibleGenerateStandard" class="btn btn-primary btn-large">
+                        <span class="btn-icon">💎</span> Generar Playbook Ansible
+                    </button>
+                </form>
+
+                <div id="ansibleResultArea" class="hidden"
+                    style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 2rem;">
+                    <div class="card-header-row">
+                        <h2 class="card-title">🛠️ Playbook Generado (YAML)</h2>
+                        <button class="btn btn-copy" id="btnCopyAnsible" title="Copiar al portapapeles">
+                            <span id="copyAnsibleIcon">📋</span> <span id="copyAnsibleText">Copiar</span>
+                        </button>
+                    </div>
+                    <pre class="cli-output" id="ansibleOutput"></pre>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if user.role == 'super_admin' %}
+        <div class="tab-content" id="tab-cmdb">
+            <!-- Carga Masiva (Restored) -->
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h2 class="card-title">🚀 Carga Masiva CMDB (Excel Nacional)</h2>
+                <div class="form-grid">
+                    <form id="formCmdbUpload" class="form-row" style="align-items: flex-end;">
+                        <div class="form-group" style="flex: 2;">
+                            <label for="cmdbFile">Archivo Excel (.xlsx)</label>
+                            <input type="file" id="cmdbFile" accept=".xlsx" class="form-input">
+                        </div>
+                        <div class="form-group" style="flex: 2;">
+                            <label for="cmdbDescription">Nombre del Lote / Descripción</label>
+                            <input type="text" id="cmdbDescription" placeholder="Ej: Carga Feb 2026 - Central"
+                                class="form-input">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btnCmdbUpload" style="height: 42px;">
+                            <span>⚡</span> Iniciar Sincronización
+                        </button>
+                    </form>
+                    <div id="cmdbUploadProgress" class="hidden" style="margin-top: 1rem;">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                        <p class="hint" style="text-align:center; margin-top:0.5rem">Procesando registros y
+                            reconciliando CI... Por favor espere.</p>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-sm btn-outline" id="btnCmdbSyncLocal"
+                        title="Usar archivo configurado en el servidor">
+                        💾 Sincronización Local
+                    </button>
+                    <button class="btn btn-sm btn-outline" id="btnDownloadTemplateCMDB" onclick="downloadTemplate()"
+                        title="Descargar estructura nacional">
+                        📋 Plantilla Base
+                    </button>
+                </div>
+            </div>
+
+            <!-- Buscador Inteligencia CMDB -->
+            <div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--accent-color);">
+                <h2 class="card-title">🔍 Buscador Inteligente de Establecimientos</h2>
+                <p class="card-desc">Escribe el nombre o dirección para ver detalles técnicos instantáneamente.</p>
+                <div class="form-group" style="position: relative; margin-top: 1rem;">
+                    <div style="display:flex; gap: 0.5rem;">
+                        <input type="text" id="cmdb_search_input"
+                            placeholder="Ej: Hospital de Urgencia, Posta Central, Av. Lib. Bernardo O'Higgins..."
+                            style="width: 100%;">
+                        <button class="btn btn-primary" id="btn_cmdb_search">
+                            <span>🔍</span> Buscar
+                        </button>
+                    </div>
+                    <div id="cmdb_search_results" class="appid-dropdown hidden"
+                        style="top: 100%; left: 0; right: 0; max-height: 400px; overflow-y: auto; z-index: 1000; border: 1px solid var(--border-color); background: var(--bg-card); box-shadow: 0 10px 25px rgba(0,0,0,0.3); border-radius: 8px;">
+                        <!-- Resultados dinámicos de autocompletado -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detalle del Establecimiento Seleccionado -->
+            <div id="cmdb_detail_container" class="hidden" style="margin-bottom: 1.5rem;">
+                <div class="card"
+                    style="background: rgba(var(--accent-rgb), 0.08); border: 1px dashed var(--accent-color);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <h2 class="card-title" id="detail_title" style="margin:0; color:var(--accent-color);">Nombre del
+                            Establecimiento</h2>
+                        <button class="btn btn-sm btn-outline"
+                            onclick="document.getElementById('cmdb_detail_container').classList.add('hidden')">Cerrar</button>
+                    </div>
+                    <div id="detail_content" class="cmdb-stats-grid"
+                        style="margin-top:1.5rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                        <!-- Se llena vía JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="cmdb-header">
+                <div class="card cmdb-stats-card">
+                    <h2 class="card-title">📊 CMDB Healthy Dashboard (ITIL 4)</h2>
+                    <div id="cmdbStats" class="cmdb-stats-grid">
+                        <div class="stat-box">
+                            <span class="stat-label">Total CIs</span>
+                            <span class="stat-value" id="statTotalCI">—</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Firewalls</span>
+                            <span class="stat-value" id="statFirewalls">—</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Prod Env</span>
+                            <span class="stat-value" id="statProd">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header-row">
+                    <div style="display:flex; align-items:center; gap:1rem;">
+                        <h2 class="card-title">📁 CI Explorer (Service Information)</h2>
+                        <div class="pagination-controls" style="display:flex; align-items:center; gap:0.5rem;">
+                            <select id="cmdb_page_size" class="form-input"
+                                style="padding:2px 8px; width:auto; font-size:0.8rem;">
+                                <option value="25">25 per page</option>
+                                <option value="50">50 per page</option>
+                                <option value="100">100 per page</option>
+                                <option value="1000">1000 per page</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button class="btn btn-sm btn-outline" id="btnCmdbPrevPage">◄</button>
+                        <span id="cmdb_page_info"
+                            style="font-size:0.85rem; min-width:80px; text-align:center; align-self:center;">Pag
+                            1</span>
+                        <button class="btn btn-sm btn-outline" id="btnCmdbNextPage">►</button>
+                        <button class="btn btn-sm btn-primary" id="btnRefreshCmdb" style="margin-left:0.5rem;">
+                            <span>🔄</span> Refrescar
+                        </button>
+                    </div>
+                </div>
+                <div class="table-wrapper cmdb-explorer-wrapper">
+                    <table class="cmdb-table">
+                        <thead class="cmdb-sticky-header">
+                            <tr>
+                                <th class="sticky-col">Establecimiento</th>
+                                <th>Dirección</th>
+                                <th>Comuna</th>
+                                <th>Región</th>
+                                <th>Provincia</th>
+                                <th>Macrozonas</th>
+                                <th>Contratante</th>
+                                <th>Tipo</th>
+                                <th>Complejidad</th>
+                                <th>HW Core</th>
+                                <th>Tipo Eq.</th>
+                                <th>SW</th>
+                                <th>VC</th>
+                                <th>Soporte</th>
+                                <th>Sat.</th>
+                                <th>800</th>
+                                <th>Mov.</th>
+                                <th>BAM</th>
+                                <th>SAMU</th>
+                                <th>CCM</th>
+                                <th>FW</th>
+                                <th>FW Sug.</th>
+                                <th>Acceso</th>
+                                <th>BW</th>
+                                <th>Resp. 1</th>
+                                <th>BW R1</th>
+                                <th>Resp. 2</th>
+                                <th>BW R2</th>
+                                <th>Resp. 3</th>
+                                <th>BW R3</th>
+                                <th>WiFi</th>
+                                <th>Home</th>
+                                <th>Ded.</th>
+                                <th>Sug. 1</th>
+                                <th>Sug. 2</th>
+                                <th>Sug. Sat</th>
+                                <th>Voz</th>
+                                <th>Datos</th>
+                                <th style="opacity: 0.4;">Batch ID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cmdbTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center;padding:2rem">Cargando activos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Historial se movió al perfil -->
+        </div>
+        {% endif %}
+
+        <!-- ═══ RESULTADOS ═══ -->
+        <div id="results" class="results hidden">
+
+            <!-- Datos normalizados -->
+            <div class="card result-card">
+                <h2 class="card-title">📋 Datos Normalizados</h2>
+                <div class="data-table" id="dataTable"></div>
+            </div>
+
+            <!-- Credenciales -->
+            <div class="card result-card credentials-card">
+                <h2 class="card-title">🔐 Credenciales</h2>
+                <div class="credential-row">
+                    <div class="credential-box">
+                        <span class="credential-label">USERNAME</span>
+                        <div class="credential-value" id="credUsername">—</div>
+                        <span class="credential-meta" id="credUsernameLen"></span>
+                    </div>
+                    <div class="credential-box">
+                        <span class="credential-label">PASSWORD</span>
+                        <div class="credential-value mono" id="credPassword">—</div>
+                        <span class="credential-meta" id="credPasswordLen"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CLI -->
+            <div class="card result-card">
+                <div class="card-header-row">
+                    <h2 class="card-title">💻 Comandos CLI PAN-OS</h2>
+                    <button class="btn btn-copy" id="btnCopyCli" title="Copiar al portapapeles">
+                        <span id="copyIcon">📋</span> <span id="copyText">Copiar</span>
+                    </button>
+                </div>
+                <pre class="cli-output" id="cliOutput"></pre>
+                <p class="cli-note">⚠️ No se incluye 'commit' por defecto. Ejecutar manualmente tras verificar.</p>
+            </div>
+
+        </div>
+
+        <!-- Error message -->
+        <div id="errorBox" class="error-box hidden"></div>
+
+        <!-- Missing fields from ticket -->
+        <div id="missingBox" class="missing-box hidden"></div>
+
+    </main>
+
+    <!-- ═══ MODAL: HISTORIAL DE LOTES (BATCH HISTORY) ═══ -->
+    <div id="batchHistoryModal" class="modal hidden">
+        <div class="modal-content"
+            style="max-width: 900px; background: var(--bg-card); color: var(--text-color); border: 1px solid var(--border-color); box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+            <div class="modal-header"
+                style="border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; padding: 1rem;">
+                <h2 style="margin:0; font-size: 1.25rem;">🕒 Historial de Lotes CMDB</h2>
+                <button class="btn-close" onclick="closeBatchHistoryModal()"
+                    style="background:none; border:none; color:var(--text-color); font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <p style="margin-bottom: 1.5rem; opacity: 0.8; font-size: 0.9rem;">Lista de cargas masivas procesadas.
+                    Puedes revertir cualquier lote para restaurar el estado previo de los datos.</p>
+                <div class="table-wrapper">
+                    <table class="cmdb-table">
+                        <thead>
+                            <tr>
+                                <th>ID Lote</th>
+                                <th>Descripción</th>
+                                <th>Usuario</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center;padding:1rem;">Cargando historial...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ FOOTER ═══ -->
+    <footer class="footer">
+        <p>VPN GlobalProtect Automation · Palo Alto Networks PAN-OS · v1.0</p>
+    </footer>
+
+    <script>
+        window.CSRF_TOKEN = "{{csrf_token()}}";
+        window.USER_ROLE = "{{user.role}}";
+    </script>
+    <script src="/static/app.js?v=1.4"></script>
+</body>
+
+</html>

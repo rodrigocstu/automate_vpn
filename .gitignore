@@ -1,0 +1,34 @@
+# Secretos y configuración local
+.env
+backend/.env
+
+# Base de datos SQLite (NO versionar datos de producción)
+instance/
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Archivos temporales y debug
+debug_*.py
+patch_parser.py
+*.bak
+*.tmp
+concept_preview.html
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

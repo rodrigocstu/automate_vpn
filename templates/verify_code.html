@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificar Código [{{ env.name }}] — VPN GlobalProtect</title>
+    <meta name="description" content="Verificación de código para VPN GlobalProtect">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                {% if purpose == 'login_by_code' %}
+                <div class="login-logo">📧</div>
+                <h1>Verificar Acceso</h1>
+                <p class="login-subtitle">Ingresa el código alfanumérico de 6 caracteres enviado a tu correo</p>
+                {% elif purpose == 'login' %}
+                <div class="login-logo">🔑</div>
+                <h1>Nueva Contraseña</h1>
+                <p class="login-subtitle">Código verificado. Establece tu nueva contraseña.</p>
+                {% else %}
+                <div class="login-logo">📧</div>
+                <h1>Verificar Código</h1>
+                <p class="login-subtitle">Ingresa el código de 6 dígitos enviado a tu correo</p>
+                {% endif %}
+            </div>
+
+            {% if error %}
+            <div class="login-error">❌ {{ error }}</div>
+            {% endif %}
+
+            {% if success %}
+            <div class="login-success">✅ {{ success }}</div>
+            {% endif %}
+
+            <form method="POST" class="login-form" id="otpForm">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                {% if purpose == 'reset' and step == 'password' %}
+                <!-- Paso 2: Nueva contraseña -->
+                <div class="form-group">
+                    <label for="new_password">Nueva contraseña</label>
+                    <input type="password" id="new_password" name="new_password" placeholder="Mínimo 8 caracteres"
+                        required minlength="8" autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirmar contraseña</label>
+                    <input type="password" id="confirm_password" name="confirm_password"
+                        placeholder="Repite la contraseña" required minlength="8">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">
+                    ✅ Establecer nueva contraseña
+                </button>
+                {% else %}
+                <!-- Paso 1: Ingresar código OTP -->
+                <div class="form-group">
+                    <label for="code">Código de verificación</label>
+                    <input type="text" id="code" name="code" placeholder="A1B2C3" required maxlength="6"
+                        pattern="[A-Za-z0-9]{6}" autocomplete="one-time-code" autofocus class="otp-input">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">
+                    🔓 Verificar código
+                </button>
+                {% endif %}
+            </form>
+
+            <div class="login-footer-link">
+                {% if purpose == 'login_by_code' %}
+                <a href="/login">← Volver al inicio de sesión</a>
+                {% elif purpose == 'login' %}
+                <a href="/forgot-password">← Solicitar otro código</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-format OTP input
+        const otpInput = document.getElementById('code');
+        if (otpInput) {
+            otpInput.addEventListener('input', function () {
+                this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            });
+        }
+    </script>
+</body>
+
+</html>
