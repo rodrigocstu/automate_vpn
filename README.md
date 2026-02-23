@@ -1,48 +1,49 @@
-# MCP Configuration Guide / Guía de Configuración MCP
+# 🛡️ Custom VPN Automation Global Protect of PAN-OS
 
-This guide explains how to use the provided MCP configuration.
-Esta guía explica cómo utilizar la configuración MCP proporcionada.
+Solución profesional para **Automatizar VPN** y **Ordenar Info VPN CLI**. Diseñada para estandarizar la creación de cuentas y generación de comandos CLI de Palo Alto Networks (PAN-OS).
 
-## English
+---
 
-The file `mcp_config.json` contains the configuration for the "stitch" MCP server. To use this with an MCP-compatible client (like Claude Desktop or others):
+## 🚀 Guía Rápida: Uso en Producción (PRD)
 
-1.  **Locate your client's configuration file.** For Claude Desktop on Windows, it is typically at `%APPDATA%\Claude\claude_desktop_config.json`.
-2.  **Add the server configuration.** Copy the content of `mcp_config.json` into your client's configuration file. If the file already exists, merge the `mcpServers` object.
+El entorno de **Producción** es el estado final para la generación de accesos oficiales.
 
-Example structure:
-```json
-{
-  "mcpServers": {
-    "stitch": {
-      "serverUrl": "https://stitch.googleapis.com/mcp",
-      "headers": {
-        "X-Goog-Api-Key": "YOUR_API_KEY_HERE"
-      }
-    }
-    // ... other servers
-  }
-}
-```
+### 1. Iniciar la aplicación
+Ejecuta el archivo `start_prd.bat` en la raíz del proyecto.
+> [!NOTE]
+> El sistema instalará automáticamente las librerías necesarias en el primer inicio.
 
-## Español
+### 2. Acceso al Portal
+Abre tu navegador en: `http://localhost:5001`
 
-El archivo `mcp_config.json` contiene la configuración para el servidor MCP "stitch". Para usar esto con un cliente compatible con MCP (como Claude Desktop u otros):
+### 3. Generación de Credenciales (Paso a Paso)
+1. **Identificación**: Ingresa el RITM del ticket y el RUT del usuario.
+2. **Parámetros de Red**: Define las IPs y zonas correspondientes al requerimiento.
+3. **Generación**: Haz clic en **"Generar Acceso"**. El sistema aplicará la **Política de Seguridad Global (20 caracteres)**.
+4. **Resultado**: El sistema entregará el bloque CLI formateado y listo para ser pegado en la consola del Firewall PAN-OS.
 
-1.  **Localiza el archivo de configuración de tu cliente.** Para Claude Desktop en Windows, típicamente está en `%APPDATA%\Claude\claude_desktop_config.json`.
-2.  **Agrega la configuración del servidor.** Copia el contenido de `mcp_config.json` en el archivo de configuración de tu cliente. Si el archivo ya existe, fusiona el objeto `mcpServers`.
+---
 
-Estructura de ejemplo:
-```json
-{
-  "mcpServers": {
-    "stitch": {
-      "serverUrl": "https://stitch.googleapis.com/mcp",
-      "headers": {
-        "X-Goog-Api-Key": "TU_CLAVE_API_AQUI"
-      }
-    }
-    // ... otros servidores
-  }
-}
-```
+## 🧪 Guía de Desarrollo y Pruebas (QA)
+
+El entorno **QA** permite validar configuraciones y realizar pruebas de carga.
+
+### 1. Iniciar QA
+Ejecuta `start_qa.bat`. Disponible en: `http://localhost:5000`
+
+### 2. Carga Masiva desde Excel
+Para procesar múltiples solicitudes a la vez:
+1. Descarga la **Plantilla Excel** desde la interfaz.
+2. Completa los datos.
+3. Sube el archivo para generar los comandos CLI de forma masiva.
+
+---
+
+## 🛠️ Requisitos Técnicos
+* **Lenguaje**: Python 3.10+
+* **Framework**: Flask / PAN-OS CLI Standard
+* **Seguridad**: Política de contraseñas de alta complejidad (20 caracteres, sin repeticiones).
+
+---
+> [!IMPORTANT]
+> **Seguridad**: Este repositorio no contiene secretos ni datos privados. Las configuraciones persistentes se gestionan localmente en el entorno del usuario.
